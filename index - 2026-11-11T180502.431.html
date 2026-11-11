@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>照合ボード</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f5f4f0; --panel:#ffffff; --ink:#1d2329; --sub:#5d6670; --line:#dedbd3;
+  --accent:#1f4e79; --accent-soft:#e6eef6;
+  --warn:#9a5b00; --warn-bg:#fff4e0; --err:#a42828; --err-bg:#fdeaea;
+  --ok:#2e6b3a; --ok-bg:#e7f3e9; --muted-bg:#efede8;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP",system-ui,sans-serif;font-size:14px}
+button{font:inherit;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+header{background:var(--panel);border-bottom:1px solid var(--line);padding:0 20px;display:flex;align-items:center;gap:24px;height:56px;position:sticky;top:0;z-index:10}
+header h1{font-size:16px;margin:0;letter-spacing:.04em}
+nav{display:flex;gap:4px}
+nav button{background:none;border:none;padding:8px 14px;border-radius:6px;color:var(--sub)}
+nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+header .who{margin-left:auto;color:var(--sub);font-size:12px;display:flex;gap:10px;align-items:center}
+main{max-width:1280px;margin:0 auto;padding:20px}
+
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 14px;border-radius:6px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+.btn.danger{color:var(--err);border-color:#e5b9b9}
+.btn.small{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+
+#login{max-width:360px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:28px}
+#login h2{margin:0 0 18px;font-size:18px}
+#login label{display:block;font-size:12px;color:var(--sub);margin:12px 0 4px}
+#login input{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px}
+#login .btn{width:100%;margin-top:18px}
+#loginErr{color:var(--err);font-size:12px;margin-top:10px}
+
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.stat .lbl{font-size:12px;color:var(--sub)}
+.stat .val{font-family:var(--mono);font-size:24px;margin-top:4px}
+.stat .act{margin-top:8px}
+
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.toolbar input,.toolbar select{padding:7px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.toolbar input[type=search]{min-width:240px}
+.toolbar .count{color:var(--sub);font-size:12px;margin-left:auto}
+.tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto}
+table.ledger{width:100%;border-collapse:collapse;font-size:13px}
+table.ledger th{position:sticky;top:0;background:#faf9f6;text-align:left;font-weight:500;color:var(--sub);font-size:11px;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.ledger td{padding:9px 10px;border-bottom:1px solid #eeece6;white-space:nowrap}
+table.ledger tr.click:hover td{background:#fbfaf7;cursor:pointer}
+.mono{font-family:var(--mono)}
+.num{font-family:var(--mono);text-align:right}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.tag.t-none{background:var(--warn-bg);color:var(--warn)}
+.tag.t-link{background:var(--ok-bg);color:var(--ok)}
+.tag.t-ex{background:var(--muted-bg);color:var(--sub)}
+.tag.t-awb{background:var(--accent-soft);color:var(--accent)}
+.tag.t-near{background:var(--muted-bg);color:var(--sub)}
+.empty{padding:40px;text-align:center;color:var(--sub)}
+.ell{max-width:260px;overflow:hidden;text-overflow:ellipsis}
+
+.group{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+.group-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:#faf9f6;font-size:13px}
+.group-head .meta{margin-left:auto;color:var(--sub);font-size:12px}
+.group-body{display:grid;grid-template-columns:1fr 1fr}
+.group-body > div{padding:10px 16px}
+.group-body > div + div{border-left:1px solid var(--line)}
+.group-body h5{margin:0 0 6px;font-size:11px;color:var(--sub);font-weight:500}
+.gi{display:flex;gap:10px;padding:5px 0;font-size:13px;border-bottom:1px dashed #eeece6;flex-wrap:wrap}
+.gi:last-child{border-bottom:0}
+.gi .r{margin-left:auto}
+
+.alert{padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.5;margin-top:6px}
+.alert.info{background:var(--accent-soft);color:var(--accent)}
+.alert.warn{background:var(--warn-bg);color:var(--warn)}
+
+#modal{position:fixed;inset:0;background:rgba(20,25,30,.45);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;z-index:50;overflow:auto}
+#modal .box{background:var(--panel);border-radius:10px;width:min(1040px,100%);padding:22px}
+#modal h3{margin:0 0 4px;font-size:17px}
+#modal .meta{color:var(--sub);font-size:12px;margin-bottom:6px}
+.sec{border-top:1px solid var(--line);margin-top:16px;padding-top:4px}
+.sec h4{margin:12px 0 8px;font-size:13px}
+dl.kv{display:grid;grid-template-columns:110px 1fr 110px 1fr;gap:6px 12px;margin:10px 0 0;font-size:13px}
+dl.kv dt{color:var(--sub);font-size:12px}
+dl.kv dd{margin:0}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media (max-width:860px){
+  .summary{grid-template-columns:1fr 1fr}
+  .group-body{grid-template-columns:1fr}
+  .group-body > div + div{border-left:0;border-top:1px solid var(--line)}
+  dl.kv{grid-template-columns:100px 1fr}
+  header{gap:12px;padding:0 12px}
+  main{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<section id="login" class="hidden">
+  <h2>照合ボード</h2>
+  <label>メールアドレス</label><input id="email" type="email" autocomplete="username">
+  <label>パスワード</label><input id="pw" type="password" autocomplete="current-password">
+  <button class="btn primary" id="loginBtn">ログイン</button>
+  <div id="loginErr"></div>
+</section>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>照合ボード</h1>
+    <nav>
+      <button data-tab="inv" class="on">請求書から</button>
+      <button data-tab="ship">荷物から</button>
+      <button data-tab="group">照合グループ</button>
+    </nav>
+    <div class="who"><span id="userEmail"></span><button class="btn" id="logoutBtn">ログアウト</button></div>
+  </header>
+
+  <main>
+    <div class="summary">
+      <div class="stat"><div class="lbl">荷物と結び付いていない請求書</div><div class="val" id="sInv">–</div></div>
+      <div class="stat"><div class="lbl">請求書と結び付いていない荷物</div><div class="val" id="sShip">–</div></div>
+      <div class="stat"><div class="lbl">AWB番号が一致する未結び付けの組</div><div class="val" id="sAwb">–</div>
+        <div class="act"><button class="btn small primary" id="bulkAwb" disabled>まとめて結び付ける</button></div></div>
+      <div class="stat"><div class="lbl">照合グループ</div><div class="val" id="sGrp">–</div></div>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="取引先・番号・AWB・商品名で検索">
+      <select id="fState">
+        <option value="none">未対応のみ</option>
+        <option value="">すべて</option>
+        <option value="link">結び付け済みのみ</option>
+        <option value="ex">対応不要のみ</option>
+      </select>
+      <label style="font-size:12px;color:var(--sub)">候補を探す範囲
+        <select id="win">
+          <option value="14">前後14日</option>
+          <option value="30" selected>前後30日</option>
+          <option value="45">前後45日</option>
+          <option value="60">前後60日</option>
+        </select>
+      </label>
+      <button class="btn" id="reload">再読み込み</button>
+      <span class="count" id="count"></span>
+    </div>
+
+    <section id="tab-inv">
+      <div class="tablewrap"><table class="ledger">
+        <thead><tr><th>請求日</th><th>取引先</th><th>請求書番号</th><th>AWB番号</th><th>商品</th><th style="text-align:right">合計</th><th>結び付いた荷物</th><th>候補</th></tr></thead>
+        <tbody id="invBody"></tbody></table>
+        <div class="empty hidden" id="invEmpty">該当する請求書はありません</div></div>
+    </section>
+
+    <section id="tab-ship" class="hidden">
+      <div class="tablewrap"><table class="ledger">
+        <thead><tr><th>発送日</th><th>AWB番号</th><th>発送元</th><th>中身</th><th>荷物の状態</th><th>結び付いた請求書</th><th>候補</th></tr></thead>
+        <tbody id="shipBody"></tbody></table>
+        <div class="empty hidden" id="shipEmpty">該当する荷物はありません</div></div>
+    </section>
+
+    <section id="tab-group" class="hidden">
+      <div id="groupList"></div>
+      <div class="empty hidden" id="groupEmpty">まだ照合グループはありません</div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="hidden"><div class="box" id="modalBox"></div></div>
+
+<script>
+// =========================================================
+// 設定（INVOICE台帳・運送状台帳と同じSupabaseプロジェクト）
+// 照合ボードは2つの台帳のデータを「読むだけ」で、書き込みは自分の表だけに行います
+// =========================================================
+const SUPABASE_URL = "https://dunfssyisxywxfcblgdg.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1bmZzc3lpc3h5d3hmY2JsZ2RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMwNjYwODEsImV4cCI6MjEwODY0MjA4MX0.pWqKvj7sLg9z3rjSGKqPPl7YLi-FFKDcuoFlDCLkZck";
+// =========================================================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const normA = (s) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const fmt = (n, d = 2) => n == null ? "" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// ---------- 取引先名のゆれを吸収して比べる ----------
+const STOP = new Set(["CO","LTD","LIMITED","INC","CORP","CORPORATION","LLC","GMBH","SRL","SAS","SA","THE","COMPANY","KK","PTE","PLC","AG","BV","NV","SPA","SARL","MEDICAL"]);
+function nameTokens(s) {
+  return String(s ?? "").toUpperCase().replace(/\(.*?\)/g, " ").replace(/[^A-Z0-9]+/g, " ")
+    .split(" ").filter(t => t && !STOP.has(t));
+}
+function nameSim(a, b) {
+  const ta = new Set(nameTokens(a)), tb = new Set(nameTokens(b));
+  if (!ta.size || !tb.size) return 0;
+  let inter = 0; ta.forEach(t => { if (tb.has(t)) inter++; });
+  return inter / Math.min(ta.size, tb.size);
+}
+const dayDiff = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000);
+
+// ---------- データ ----------
+let INV = [], SHIP = [], LINKS = [], EXCL = [];
+const shipDate = (s) => s.wb_ship_date || s.inv_date || (s.created_at || "").slice(0, 10);
+const shipper = (s) => s.wb_shipper || s.inv_shipper || "";
+function shipStatus(s) {
+  const t = (s.shipment_docs || []).map(d => d.doc_type);
+  if (s.confirmed_at) return "確認済";
+  if (s.arrival_date) return "到着・確認中";
+  if (!t.includes("waybill") || !t.includes("invoice")) return "書類待ち";
+  return "未着";
+}
+function invItemsLabel(r) {
+  const its = r.invoice_items || [];
+  return its[0] ? its[0].description + (its.length > 1 ? ` 他${its.length - 1}件` : "") : "";
+}
+function shipItemsLabel(s) {
+  const cs = s.shipment_contents || [], its = s.shipment_items || [];
+  if (cs[0]) return cs[0].product + (cs.length > 1 ? ` 他${cs.length - 1}件` : "");
+  if (its[0]) return its[0].description + (its.length > 1 ? ` 他${its.length - 1}件` : "");
+  return "";
+}
+const linksOfInv = (id) => LINKS.filter(l => l.invoice_id === id);
+const linksOfShip = (id) => LINKS.filter(l => l.shipment_id === id);
+const exOf = (kind, id) => EXCL.find(e => e.kind === kind && e.ref_id === id);
+const win = () => Number($("#win").value);
+
+async function loadAll() {
+  $("#count").innerHTML = '<span class="spinner"></span>読み込み中…';
+  const [a, b, c, d] = await Promise.all([
+    sb.from("invoices").select("id,supplier,invoice_no,invoice_date,awb_no,currency,total_amount,status,created_at,invoice_items(description,quantity)"),
+    sb.from("shipments").select("id,awb_no,carrier,wb_ship_date,inv_date,wb_shipper,inv_shipper,inv_no,currency,total_amount,arrival_date,confirmed_at,created_at,shipment_docs(doc_type),shipment_items(description,quantity),shipment_contents(product,requested_qty)"),
+    sb.from("match_links").select("*"),
+    sb.from("match_exclusions").select("*"),
+  ]);
+  const err = [a, b, c, d].find(x => x.error);
+  if (err) { $("#count").textContent = ""; alert("読み込みに失敗しました：" + err.error.message); return; }
+  INV = a.data; SHIP = b.data; LINKS = c.data; EXCL = d.data;
+  INV.sort((x, y) => (y.invoice_date || "").localeCompare(x.invoice_date || ""));
+  SHIP.sort((x, y) => shipDate(y).localeCompare(shipDate(x)));
+  drawAll();
+}
+
+// ---------- 候補探し ----------
+function candidatesForInvoice(inv) {
+  const linked = new Set(linksOfInv(inv.id).map(l => l.shipment_id)), out = [];
+  SHIP.forEach(s => {
+    if (linked.has(s.id)) return;
+    if (inv.awb_no && s.awb_no && normA(inv.awb_no) === normA(s.awb_no)) { out.push({ s, kind: "awb", score: 1000 }); return; }
+    const sim = nameSim(inv.supplier, shipper(s));
+    const sd = shipDate(s);
+    if (sim < 0.5 || !inv.invoice_date || !sd) return;
+    const d = dayDiff(sd, inv.invoice_date);
+    if (Math.abs(d) > win()) return;
+    out.push({ s, kind: "near", d, score: sim * 50 + (1 - Math.abs(d) / win()) * 40 });
+  });
+  return out.sort((x, y) => y.score - x.score).slice(0, 10);
+}
+function candidatesForShipment(s) {
+  const linked = new Set(linksOfShip(s.id).map(l => l.invoice_id)), out = [];
+  const sd = shipDate(s);
+  INV.forEach(inv => {
+    if (linked.has(inv.id)) return;
+    if (inv.awb_no && s.awb_no && normA(inv.awb_no) === normA(s.awb_no)) { out.push({ inv, kind: "awb", score: 1000 }); return; }
+    const sim = nameSim(inv.supplier, shipper(s));
+    if (sim < 0.5 || !inv.invoice_date || !sd) return;
+    const d = dayDiff(sd, inv.invoice_date);
+    if (Math.abs(d) > win()) return;
+    out.push({ inv, kind: "near", d, score: sim * 50 + (1 - Math.abs(d) / win()) * 40 });
+  });
+  return out.sort((x, y) => y.score - x.score).slice(0, 10);
+}
+function awbPairs() {
+  const pairs = [];
+  INV.forEach(inv => {
+    if (!inv.awb_no || exOf("invoice", inv.id)) return;
+    SHIP.forEach(s => {
+      if (s.awb_no && normA(s.awb_no) === normA(inv.awb_no) && !exOf("shipment", s.id) &&
+          !LINKS.some(l => l.invoice_id === inv.id && l.shipment_id === s.id)) pairs.push({ inv, s });
+    });
+  });
+  return pairs;
+}
+
+// ---------- 照合グループ（結び付いたもの同士のまとまり） ----------
+function buildGroups() {
+  const parent = {};
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  const add = (x) => { if (!(x in parent)) parent[x] = x; };
+  LINKS.forEach(l => { const a = "i" + l.invoice_id, b = "s" + l.shipment_id; add(a); add(b); parent[find(a)] = find(b); });
+  const groups = {};
+  Object.keys(parent).forEach(k => { const r = find(k); (groups[r] = groups[r] || { inv: [], ship: [] })[k[0] === "i" ? "inv" : "ship"].push(k.slice(1)); });
+  return Object.values(groups).map(g => ({
+    inv: g.inv.map(id => INV.find(x => x.id === id)).filter(Boolean),
+    ship: g.ship.map(id => SHIP.find(x => x.id === id)).filter(Boolean),
+  })).filter(g => g.inv.length || g.ship.length)
+    .sort((a, b) => {
+      const da = [...a.inv.map(x => x.invoice_date || ""), ...a.ship.map(shipDate)].sort().pop() || "";
+      const db = [...b.inv.map(x => x.invoice_date || ""), ...b.ship.map(shipDate)].sort().pop() || "";
+      return db.localeCompare(da);
+    });
+}
+
+// ---------- 表示 ----------
+let TAB = "inv";
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  TAB = b.dataset.tab;
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  ["inv", "ship", "group"].forEach(t => $("#tab-" + t).classList.toggle("hidden", t !== TAB));
+  drawAll();
+});
+["q", "fState", "win"].forEach(id => $("#" + id).addEventListener("input", drawAll));
+$("#reload").onclick = loadAll;
+
+function stateOf(kind, id) {
+  if (exOf(kind, id)) return "ex";
+  return (kind === "invoice" ? linksOfInv(id) : linksOfShip(id)).length ? "link" : "none";
+}
+function stateTag(kind, id) {
+  const st = stateOf(kind, id);
+  if (st === "ex") return `<span class="tag t-ex">対応不要</span>`;
+  const n = (kind === "invoice" ? linksOfInv(id) : linksOfShip(id)).length;
+  return st === "link" ? `<span class="tag t-link">${n}件</span>` : `<span class="tag t-none">未対応</span>`;
+}
+function candTag(c) {
+  if (!c.length) return "";
+  return c[0].kind === "awb" ? `<span class="tag t-awb">AWB一致</span>` : `<span class="tag t-near">候補 ${c.length}件</span>`;
+}
+
+function drawAll() {
+  const q = normA($("#q").value), fs = $("#fState").value;
+  const invNone = INV.filter(i => stateOf("invoice", i.id) === "none").length;
+  const shipNone = SHIP.filter(s => stateOf("shipment", s.id) === "none").length;
+  const pairs = awbPairs(), groups = buildGroups();
+  $("#sInv").textContent = invNone; $("#sShip").textContent = shipNone;
+  $("#sAwb").textContent = pairs.length; $("#sGrp").textContent = groups.length;
+  $("#bulkAwb").disabled = !pairs.length;
+
+  if (TAB === "inv") {
+    const rows = INV.filter(i => (!fs || stateOf("invoice", i.id) === fs) &&
+      (!q || normA([i.supplier, i.invoice_no, i.awb_no, ...(i.invoice_items || []).map(x => x.description)].join(" ")).includes(q)));
+    $("#count").textContent = `${rows.length} 件`;
+    $("#invEmpty").classList.toggle("hidden", rows.length > 0);
+    $("#invBody").innerHTML = rows.map(i => `<tr class="click" data-id="${i.id}">
+      <td class="mono">${esc(i.invoice_date ?? "")}</td><td>${esc(i.supplier)}</td><td class="mono">${esc(i.invoice_no)}</td>
+      <td class="mono">${esc(i.awb_no ?? "")}</td><td class="ell">${esc(invItemsLabel(i))}</td>
+      <td class="num">${fmt(i.total_amount)} ${esc(i.currency ?? "")}</td>
+      <td>${stateTag("invoice", i.id)}</td><td>${stateOf("invoice", i.id) === "none" ? candTag(candidatesForInvoice(i)) : ""}</td></tr>`).join("");
+    document.querySelectorAll("#invBody tr").forEach(tr => tr.onclick = () => openInvoice(tr.dataset.id));
+  }
+  if (TAB === "ship") {
+    const rows = SHIP.filter(s => (!fs || stateOf("shipment", s.id) === fs) &&
+      (!q || normA([s.awb_no, shipper(s), s.inv_no, ...(s.shipment_contents || []).map(x => x.product), ...(s.shipment_items || []).map(x => x.description)].join(" ")).includes(q)));
+    $("#count").textContent = `${rows.length} 件`;
+    $("#shipEmpty").classList.toggle("hidden", rows.length > 0);
+    $("#shipBody").innerHTML = rows.map(s => `<tr class="click" data-id="${s.id}">
+      <td class="mono">${esc(shipDate(s))}</td><td class="mono">${esc(s.awb_no)}</td><td>${esc(shipper(s))}</td>
+      <td class="ell">${esc(shipItemsLabel(s))}</td><td>${esc(shipStatus(s))}</td>
+      <td>${stateTag("shipment", s.id)}</td><td>${stateOf("shipment", s.id) === "none" ? candTag(candidatesForShipment(s)) : ""}</td></tr>`).join("");
+    document.querySelectorAll("#shipBody tr").forEach(tr => tr.onclick = () => openShipment(tr.dataset.id));
+  }
+  if (TAB === "group") {
+    const list = groups.filter(g => !q || normA([...g.inv.flatMap(i => [i.supplier, i.invoice_no, i.awb_no]), ...g.ship.flatMap(s => [s.awb_no, shipper(s)])].join(" ")).includes(q));
+    $("#count").textContent = `${list.length} グループ`;
+    $("#groupEmpty").classList.toggle("hidden", list.length > 0);
+    $("#groupList").innerHTML = list.map((g, n) => {
+      const arrived = g.ship.filter(s => s.arrival_date || s.confirmed_at).length;
+      const kind = g.inv.length > 1 && g.ship.length > 1 ? "複数の請求書 × 複数の荷物"
+        : g.ship.length > 1 ? "分割発送" : g.inv.length > 1 ? "同梱" : "1対1";
+      return `<div class="group">
+        <div class="group-head"><strong>${esc(g.inv[0]?.supplier || shipper(g.ship[0] || {}))}</strong>
+          <span class="tag t-near">${kind}</span>
+          <span class="meta">請求書 ${g.inv.length}枚 ／ 荷物 ${g.ship.length}個（到着 ${arrived}）</span></div>
+        <div class="group-body">
+          <div><h5>請求書（INVOICE台帳）</h5>${g.inv.map(i => `<div class="gi"><span class="mono">${esc(i.invoice_date ?? "")}</span>
+            <span class="mono">${esc(i.invoice_no)}</span><span class="r num">${fmt(i.total_amount)} ${esc(i.currency ?? "")}</span>
+            <button class="btn small" data-oi="${i.id}">開く</button></div>`).join("") || '<div class="gi" style="color:var(--sub)">なし</div>'}</div>
+          <div><h5>荷物（運送状台帳）</h5>${g.ship.map(s => `<div class="gi"><span class="mono">${esc(shipDate(s))}</span>
+            <span class="mono">${esc(s.awb_no)}</span><span>${esc(shipStatus(s))}</span>
+            <span class="r"><button class="btn small" data-os="${s.id}">開く</button></span></div>`).join("") || '<div class="gi" style="color:var(--sub)">なし</div>'}</div>
+        </div></div>`;
+    }).join("");
+    document.querySelectorAll("[data-oi]").forEach(b => b.onclick = () => openInvoice(b.dataset.oi));
+    document.querySelectorAll("[data-os]").forEach(b => b.onclick = () => openShipment(b.dataset.os));
+  }
+}
+
+// ---------- 結び付け・解除・対応不要（照合ボード専用の表だけを書き換える） ----------
+async function link(invoice_id, shipment_id, method) {
+  const { error } = await sb.from("match_links").insert({ invoice_id, shipment_id, method });
+  if (error && !String(error.message).includes("duplicate")) { alert("結び付けに失敗しました：" + error.message); return false; }
+  return true;
+}
+async function unlink(id) {
+  const { error } = await sb.from("match_links").delete().eq("id", id);
+  if (error) { alert("解除に失敗しました：" + error.message); return false; }
+  return true;
+}
+async function setExclude(kind, ref_id, on) {
+  if (on) {
+    const reason = prompt("対応不要にする理由（例：サンプル品、請求のみ、別途手配 など）", "");
+    if (reason === null) return false;
+    const { error } = await sb.from("match_exclusions").insert({ kind, ref_id, reason: reason || null });
+    if (error) { alert("保存に失敗しました：" + error.message); return false; }
+  } else {
+    const { error } = await sb.from("match_exclusions").delete().eq("kind", kind).eq("ref_id", ref_id);
+    if (error) { alert("解除に失敗しました：" + error.message); return false; }
+  }
+  return true;
+}
+async function refreshLinks() {
+  const [c, d] = await Promise.all([sb.from("match_links").select("*"), sb.from("match_exclusions").select("*")]);
+  if (!c.error) LINKS = c.data;
+  if (!d.error) EXCL = d.data;
+  drawAll();
+}
+
+$("#bulkAwb").onclick = async () => {
+  const pairs = awbPairs();
+  if (!pairs.length) return;
+  if (!confirm(`AWB番号が一致する ${pairs.length} 組を結び付けます。よろしいですか？\n\n` +
+    pairs.slice(0, 15).map(p => `・${p.inv.supplier} ${p.inv.invoice_no} ⇔ AWB ${p.s.awb_no}`).join("\n") + (pairs.length > 15 ? "\n…" : ""))) return;
+  const { error } = await sb.from("match_links").insert(pairs.map(p => ({ invoice_id: p.inv.id, shipment_id: p.s.id, method: "awb" })));
+  if (error) alert("結び付けに失敗しました：" + error.message);
+  refreshLinks();
+};
+
+// ---------- 詳細：請求書から ----------
+function shipRow(s, extra) {
+  return `<tr><td class="mono">${esc(shipDate(s))}</td><td class="mono">${esc(s.awb_no)}</td><td>${esc(shipper(s))}</td>
+    <td class="ell">${esc(shipItemsLabel(s))}</td><td>${esc(shipStatus(s))}</td><td>${extra}</td></tr>`;
+}
+function invRow(i, extra) {
+  return `<tr><td class="mono">${esc(i.invoice_date ?? "")}</td><td>${esc(i.supplier)}</td><td class="mono">${esc(i.invoice_no)}</td>
+    <td class="ell">${esc(invItemsLabel(i))}</td><td class="num">${fmt(i.total_amount)} ${esc(i.currency ?? "")}</td><td>${extra}</td></tr>`;
+}
+const candLabel = (c) => c.kind === "awb" ? `<span class="tag t-awb">AWB一致</span>` : `<span class="tag t-near">${c.d >= 0 ? "請求日の" + c.d + "日後に発送" : "請求日の" + (-c.d) + "日前に発送"}</span>`;
+
+function openInvoice(id) {
+  const i = INV.find(x => x.id === id); if (!i) return;
+  const links = linksOfInv(id), ex = exOf("invoice", id), cands = candidatesForInvoice(i);
+  $("#modalBox").innerHTML = `
+    <h3>${esc(i.supplier)}　${esc(i.invoice_no)}</h3>
+    <div class="meta">INVOICE台帳の請求書（ここでは表示のみ。内容の修正はINVOICE台帳で行います）</div>
+    <dl class="kv">
+      <dt>請求日</dt><dd class="mono">${esc(i.invoice_date ?? "")}</dd><dt>AWB番号</dt><dd class="mono">${esc(i.awb_no ?? "")}</dd>
+      <dt>合計</dt><dd class="mono">${fmt(i.total_amount)} ${esc(i.currency ?? "")}</dd><dt>商品</dt><dd>${esc(invItemsLabel(i))}</dd>
+    </dl>
+    ${ex ? `<div class="alert warn">対応不要にしています${ex.reason ? "（理由：" + esc(ex.reason) + "）" : ""}</div>` : ""}
+    <div class="sec"><h4>結び付いた荷物（${links.length}）</h4>
+      ${links.length ? `<div class="tablewrap"><table class="ledger"><thead><tr><th>発送日</th><th>AWB番号</th><th>発送元</th><th>中身</th><th>状態</th><th></th></tr></thead><tbody>
+        ${links.map(l => { const s = SHIP.find(x => x.id === l.shipment_id); return s ? shipRow(s, `<button class="btn small danger" data-unlink="${l.id}">解除</button>`) : ""; }).join("")}
+      </tbody></table></div>` : `<div class="alert info">まだ荷物と結び付いていません</div>`}
+    </div>
+    <div class="sec"><h4>候補（AWB一致、または同じ取引先で前後${win()}日以内に発送）</h4>
+      ${cands.length ? `<div class="tablewrap"><table class="ledger"><thead><tr><th>発送日</th><th>AWB番号</th><th>発送元</th><th>中身</th><th>状態</th><th></th></tr></thead><tbody>
+        ${cands.map(c => shipRow(c.s, `${candLabel(c)} <button class="btn small primary" data-link="${c.s.id}">結び付ける</button>`)).join("")}
+      </tbody></table></div>` : `<div class="alert info">候補が見つかりません。下の検索で探すか、上の「候補を探す範囲」を広げてください</div>`}
+    </div>
+    <div class="sec"><h4>荷物を検索して結び付ける</h4>
+      <input type="search" id="mSearch" placeholder="AWB番号・発送元・商品名" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px">
+      <div id="mResult" style="margin-top:8px"></div>
+    </div>
+    <div class="actions">
+      ${ex ? `<button class="btn" id="mEx">対応不要を取り消す</button>` : `<button class="btn" id="mEx">対応不要にする</button>`}
+      <span style="flex:1"></span><button class="btn" id="mClose">閉じる</button>
+    </div>`;
+  $("#modal").classList.remove("hidden");
+  const reopen = async () => { await refreshLinks(); openInvoice(id); };
+  $("#mClose").onclick = closeModal;
+  $("#mEx").onclick = async () => { if (await setExclude("invoice", id, !ex)) reopen(); };
+  $("#modalBox").querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => { if (confirm("この結び付けを解除しますか？") && await unlink(b.dataset.unlink)) reopen(); });
+  $("#modalBox").querySelectorAll("[data-link]").forEach(b => b.onclick = async () => { if (await link(id, b.dataset.link, "manual")) reopen(); });
+  $("#mSearch").oninput = () => {
+    const q = normA($("#mSearch").value); const linked = new Set(links.map(l => l.shipment_id));
+    const hits = q.length < 2 ? [] : SHIP.filter(s => !linked.has(s.id) &&
+      normA([s.awb_no, shipper(s), s.inv_no, ...(s.shipment_contents || []).map(x => x.product), ...(s.shipment_items || []).map(x => x.description)].join(" ")).includes(q)).slice(0, 20);
+    $("#mResult").innerHTML = hits.length ? `<div class="tablewrap"><table class="ledger"><tbody>${hits.map(s => shipRow(s, `<button class="btn small primary" data-link2="${s.id}">結び付ける</button>`)).join("")}</tbody></table></div>`
+      : (q.length >= 2 ? `<div class="alert info">見つかりません</div>` : "");
+    $("#mResult").querySelectorAll("[data-link2]").forEach(b => b.onclick = async () => { if (await link(id, b.dataset.link2, "manual")) reopen(); });
+  };
+}
+
+// ---------- 詳細：荷物から ----------
+function openShipment(id) {
+  const s = SHIP.find(x => x.id === id); if (!s) return;
+  const links = linksOfShip(id), ex = exOf("shipment", id), cands = candidatesForShipment(s);
+  $("#modalBox").innerHTML = `
+    <h3>AWB ${esc(s.awb_no)}</h3>
+    <div class="meta">運送状台帳の荷物（ここでは表示のみ。内容の修正は運送状台帳で行います）</div>
+    <dl class="kv">
+      <dt>発送日</dt><dd class="mono">${esc(shipDate(s))}</dd><dt>発送元</dt><dd>${esc(shipper(s))}</dd>
+      <dt>状態</dt><dd>${esc(shipStatus(s))}</dd><dt>中身</dt><dd>${esc(shipItemsLabel(s))}</dd>
+    </dl>
+    ${ex ? `<div class="alert warn">対応不要にしています${ex.reason ? "（理由：" + esc(ex.reason) + "）" : ""}</div>` : ""}
+    <div class="sec"><h4>結び付いた請求書（${links.length}）</h4>
+      ${links.length ? `<div class="tablewrap"><table class="ledger"><thead><tr><th>請求日</th><th>取引先</th><th>請求書番号</th><th>商品</th><th style="text-align:right">合計</th><th></th></tr></thead><tbody>
+        ${links.map(l => { const i = INV.find(x => x.id === l.invoice_id); return i ? invRow(i, `<button class="btn small danger" data-unlink="${l.id}">解除</button>`) : ""; }).join("")}
+      </tbody></table></div>` : `<div class="alert info">まだ請求書と結び付いていません</div>`}
+    </div>
+    <div class="sec"><h4>候補（AWB一致、または同じ取引先で前後${win()}日以内の請求書）</h4>
+      ${cands.length ? `<div class="tablewrap"><table class="ledger"><thead><tr><th>請求日</th><th>取引先</th><th>請求書番号</th><th>商品</th><th style="text-align:right">合計</th><th></th></tr></thead><tbody>
+        ${cands.map(c => invRow(c.inv, `${candLabel(c)} <button class="btn small primary" data-link="${c.inv.id}">結び付ける</button>`)).join("")}
+      </tbody></table></div>` : `<div class="alert info">候補が見つかりません。下の検索で探すか、上の「候補を探す範囲」を広げてください</div>`}
+    </div>
+    <div class="sec"><h4>請求書を検索して結び付ける</h4>
+      <input type="search" id="mSearch" placeholder="取引先・請求書番号・商品名" style="width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:6px">
+      <div id="mResult" style="margin-top:8px"></div>
+    </div>
+    <div class="actions">
+      ${ex ? `<button class="btn" id="mEx">対応不要を取り消す</button>` : `<button class="btn" id="mEx">対応不要にする</button>`}
+      <span style="flex:1"></span><button class="btn" id="mClose">閉じる</button>
+    </div>`;
+  $("#modal").classList.remove("hidden");
+  const reopen = async () => { await refreshLinks(); openShipment(id); };
+  $("#mClose").onclick = closeModal;
+  $("#mEx").onclick = async () => { if (await setExclude("shipment", id, !ex)) reopen(); };
+  $("#modalBox").querySelectorAll("[data-unlink]").forEach(b => b.onclick = async () => { if (confirm("この結び付けを解除しますか？") && await unlink(b.dataset.unlink)) reopen(); });
+  $("#modalBox").querySelectorAll("[data-link]").forEach(b => b.onclick = async () => { if (await link(b.dataset.link, id, "manual")) reopen(); });
+  $("#mSearch").oninput = () => {
+    const q = normA($("#mSearch").value); const linked = new Set(links.map(l => l.invoice_id));
+    const hits = q.length < 2 ? [] : INV.filter(i => !linked.has(i.id) &&
+      normA([i.supplier, i.invoice_no, i.awb_no, ...(i.invoice_items || []).map(x => x.description)].join(" ")).includes(q)).slice(0, 20);
+    $("#mResult").innerHTML = hits.length ? `<div class="tablewrap"><table class="ledger"><tbody>${hits.map(i => invRow(i, `<button class="btn small primary" data-link2="${i.id}">結び付ける</button>`)).join("")}</tbody></table></div>`
+      : (q.length >= 2 ? `<div class="alert info">見つかりません</div>` : "");
+    $("#mResult").querySelectorAll("[data-link2]").forEach(b => b.onclick = async () => { if (await link(b.dataset.link2, id, "manual")) reopen(); });
+  };
+}
+function closeModal() { $("#modal").classList.add("hidden"); }
+$("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
+
+// ---------- ログイン ----------
+async function boot() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) showApp(session.user); else $("#login").classList.remove("hidden");
+}
+$("#loginBtn").onclick = async () => {
+  $("#loginErr").textContent = "";
+  const { data, error } = await sb.auth.signInWithPassword({ email: $("#email").value.trim(), password: $("#pw").value });
+  if (error) { $("#loginErr").textContent = "ログインできませんでした。メールアドレスとパスワードを確認してください。"; return; }
+  $("#login").classList.add("hidden"); showApp(data.user);
+};
+$("#pw").addEventListener("keydown", e => { if (e.key === "Enter") $("#loginBtn").click(); });
+$("#logoutBtn").onclick = async () => { await sb.auth.signOut(); location.reload(); };
+function showApp(user) { $("#userEmail").textContent = user.email; $("#app").classList.remove("hidden"); loadAll(); }
+
+boot();
+</script>
+</body>
+</html>
